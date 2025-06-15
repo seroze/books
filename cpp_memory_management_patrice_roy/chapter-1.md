@@ -324,3 +324,125 @@ References couldn't solve this because they either:
 3. Broke normal value semantics
 
 Move semantics gave us the best of both worlds - the safety and simplicity of value semantics with the efficiency previously only possible with unsafe reference hacking.
+
+For every class there are these 6 basic member functions
+
+1. Default constructor
+2. Destructor
+3. Copy constructor
+4. Copy assignment
+5. Move constructor
+6. Move assignment
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Person {
+    std::string name;
+    int age;
+public:
+    // 1. Default constructor
+    Person() : name("Unknown"), age(0) {
+        std::cout << "Default constructor\n";
+    }
+
+    // 2. Destructor
+    ~Person() {
+        std::cout << "Destructor for " << name << "\n";
+    }
+
+    // 3. Copy constructor
+    Person(const Person& other) : name(other.name), age(other.age) {
+        std::cout << "Copy constructor\n";
+    }
+
+    // 4. Copy assignment
+    Person& operator=(const Person& other) {
+        name = other.name;
+        age = other.age;
+        std::cout << "Copy assignment\n";
+        return *this;
+    }
+
+    // 5. Move constructor
+    Person(Person&& other) noexcept
+        : name(std::move(other.name)), age(other.age) {
+        other.age = 0;
+        std::cout << "Move constructor\n";
+    }
+
+    // Constructor with parameters
+    Person(std::string n, int a) : name(n), age(a) {}
+
+    void print() const {
+        std::cout << name << ", " << age << "\n";
+    }
+};
+
+int main() {
+    std::cout << "--- Default construction ---\n";
+    Person p1;  // Default constructor
+
+    std::cout << "\n--- Copy construction ---\n";
+    Person p2 = p1;  // Copy constructor
+
+    std::cout << "\n--- Copy assignment ---\n";
+    Person p3("Alice", 30);
+    p1 = p3;  // Copy assignment
+
+    std::cout << "\n--- Move construction ---\n";
+    Person p4 = Person("Bob", 25);  // Move constructor
+
+    std::cout << "\n--- Destructors called ---\n";
+    // All destructors called when objects go out of scope
+}
+```
+
+Q: Why do we need copy assignment ?
+Key Difference: Copy construction creates a new object, while copy assignment modifies an existing one.
+For classes managing resources (memory, files, etc.), assignment needs special handling:
+
+```cpp
+class String {
+    char* data;
+public:
+    // Copy assignment must:
+    // 1. Free existing resources
+    // 2. Allocate new resources
+    // 3. Copy content
+    String& operator=(const String& other) {
+        if (this != &other) {  // Protect against self-assignment
+            delete[] data;     // 1. Free existing
+            data = new char[strlen(other.data) + 1]; // 2. Allocate new
+            strcpy(data, other.data);  // 3. Copy content
+        }
+        return *this;
+    }
+};
+```
+
+```cpp
+String a, b;
+a = b;             // Copy assignment
+a = String("tmp"); // Move assignment (different operation)
+```
+
+Problematic case
+```cpp
+class BadString {
+    char* data;
+    // No copy assignment declared
+};
+
+BadString a, b;
+a = b;  // Compiler-generated assignment copies the POINTER,
+         // now both objects point to same memory!
+         // Double-free will occur when both are destroyed
+```
+Questions:
+1. what is the rule of five ?
+2. what is noexcept and when do we use those ?
+3. why should we implement swap() for simplifying move assignment
+4. why do we use T&& for rvalue syntax ?
+5. why is corton warning on use of std::move() https://cor3ntin.github.io/posts/move/
