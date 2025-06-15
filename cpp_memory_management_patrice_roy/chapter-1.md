@@ -109,3 +109,218 @@ Cpp considers six member functions as special. These will be automatically gener
 - copy assignment
 - move constructor
 - move assignment
+
+Talking about move I had to understand about lvalue & rvalue references
+
+I watched this https://www.youtube.com/watch?v=i_Z_o9T2fNE (Amir Kirsh - CppCon 2024) and https://cbarrete.com/move-from-scratch.html
+https://learnmoderncpp.com/2025/01/07/move-semantics-in-modern-c-1/
+
+Basically there are cases where you will be returning copies in certain cases
+
+Eg1:
+
+```cpp
+
+// Without move semantics
+std::string s1(1000, 'A'); // A very long string (to avoid SSO)
+auto s2 = s1;
+```
+
+At runtime the contents of s1 are copied into s2 with s1 still being able to be accessed and modified
+independently.
+
+```cpp
+
+// This code moves contents of s1 into s2 and it's very fast compared to the previous version
+// With move semantics
+std::string s1(1000, 'A');
+auto s2 = std::move(s1);
+```
+
+Eg2:
+
+```cpp
+
+#include <vector>
+#include <string>
+
+std::vector<std::string> createStrings() {
+    std::vector<std::string> vec;
+    vec.push_back("Hello");
+    vec.push_back("World");
+    vec.push_back("This");
+    vec.push_back("would");
+    vec.push_back("copy");
+    return vec; // Before C++11, this would often trigger a copy
+}
+
+int main() {
+    std::vector<std::string> myStrings = createStrings(); // Expensive copy!
+    // ...
+}
+```
+
+
+```cpp
+#include <vector>
+#include <string>
+
+std::vector<std::string> createStrings() {
+    std::vector<std::string> vec;
+    vec.push_back("Hello");
+    vec.push_back("World");
+    vec.push_back("This");
+    vec.push_back("gets");
+    vec.push_back("moved");
+    return vec; // Modern C++ will move this automatically
+}
+
+int main() {
+    std::vector<std::string> myStrings = createStrings(); // Efficient move!
+    // ...
+}
+```
+
+Eg3:
+
+```cpp
+std::vector<std::string> vec;
+std::string temp("Large string content here...");
+
+// This would make a copy:
+vec.push_back(temp); // Copy constructor called
+```
+
+```cpp
+std::vector<std::string> vec;
+std::string temp("Large string content here...");
+
+// This moves the content (no copy):
+vec.push_back(std::move(temp)); // Move constructor called
+// temp is now empty (but in valid state)
+```
+
+The goal of move semantics is to have some way to tell the code when to copy and when to move for performance.
+
+I had this question of why not just return the reference of a std::vector<std::string> to avoid all this mess, but there are few problems
+
+```cpp
+std::vector<std::string>& createStrings() {  // Notice the &
+    std::vector<std::string> vec;  // Local variable
+    // ... fill the vector ...
+    return vec;  // DANGER: Returning reference to local!
+}
+```
+
+Eg:
+1. If we try to return a reference in your example it will return reference to the local variable. vec is local var and it gets destroyed after function exits.
+2. The returned reference is what we call as a "dangling reference" (pointing to destroyed memory)
+3. Any use of the returned reference would cause undefined behavour
+
+One other way to deal with this is to refurn reference to a heap allocated object
+
+```cpp
+std::vector<std::string>& createStrings() {
+    auto* vec = new std::vector<std::string>();  // Heap allocation
+    // ... fill the vector ...
+    return *vec;  // Returns reference
+}
+```
+
+Problems:
+
+1. Now you have to manually delete it (memory management headache)
+2. Easy to forget to delete, causing memory leaks
+3. Doesn't work well with value semantics that C++ favors
+
+One other way is to use output parameters but this has different semantic problems
+
+```cpp
+void createStrings(std::vector<std::string>& outVec) {
+    // ... fill outVec ...
+}
+```
+
+Problems:
+
+1. Ugly syntax that breaks composability.
+2. Doesn't work well with operator overloading or chaining.
+3. Still requires a copy if you want to store the result.
+
+Why Move Semantics Are the Right Solution
+Move semantics solve this perfectly by:
+
+1. Keeping clean value semantics
+2. Avoiding unnecessary copies
+3. Being safe (no dangling references)
+
+Working automatically in many cases
+
+How It Works with Move Semantics:
+```cpp
+std::vector<std::string> createStrings() {
+    std::vector<std::string> vec;
+    // ... fill the vector ...
+    return vec;  // Compiler will move this automatically
+}
+```
+
+When you do:
+
+```cpp
+auto strings = createStrings();  // No copy, just move
+```
+
+The compiler recognizes that:
+- vec is about to be destroyed (it's an rvalue).
+- It can "steal" the internal resources instead of copying.
+- The moved-from object (vec) is left in a valid but unspecified state.
+
+Key Advantages Over Reference Approaches
+
+Safety: No dangling references possible
+Clean ownership: The receiver clearly owns the object
+Automatic: Works even in complex expressions
+Composable: Works with operator overloading, chaining, etc.
+Efficient: Often as fast as passing references
+
+Real-World Example Where References Fail:
+
+Consider:
+
+```cpp
+auto result = transformStrings(filterStrings(createStrings()));
+```
+
+With references, this would be impossible to do safely and efficiently. With move semantics, it:
+
+1. Creates strings in createStrings()
+2. Moves them to filterStrings()
+3. Moves again to transformStrings()
+
+Finally moves to result
+
+All without any copies or unsafe references.
+
+Why Not Just Use Copy Elision (RVO/NRVO)?
+Copy elision (Return Value Optimization) helps in some cases, but:
+
+1. It's not guaranteed by the standard (compiler can choose to do it)
+2. Doesn't help in all cases (like storing intermediate results)
+3. Move semantics provides a guaranteed, standardized way to avoid copies
+
+Conclusion
+The invention of rvalue references and move semantics provided:
+
+1. A safe way to transfer ownership
+2. While maintaining clean value semantics
+3. Without requiring manual memory management
+4. And working in all contexts (not just returns)
+
+References couldn't solve this because they either:
+
+1. Were unsafe (dangling references), or
+2. Required manual memory management, or
+3. Broke normal value semantics
+
+Move semantics gave us the best of both worlds - the safety and simplicity of value semantics with the efficiency previously only possible with unsafe reference hacking.
